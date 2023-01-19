@@ -6,6 +6,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_mod_picking::*;
 use std::time::Duration;
 use std::thread::sleep;
+use std::thread;
 
 pub const HEIGHT: f32 = 720.0;
 pub const WIDTH: f32 = 1280.0;
@@ -35,6 +36,8 @@ fn main() {
         .add_startup_system(spawn_camera)
         .add_system(camera_controls)
         .add_system(chess_movement_script)
+        .add_system(chess_data_piece)
+        .add_system(chess_data_square)
         // .add_system(test_selection)
         .run();
 }
@@ -61,7 +64,10 @@ pub struct ChessBoard{
 #[derive(Resource)]
 #[derive(Debug)]
 struct DataBase{
-    data:HashMap<String,Transform>
+    data:HashMap<String,Transform>,
+    piece_flag:bool,
+    square_flag:bool,
+    piece_id:String,
 }
 
 
@@ -97,7 +103,7 @@ fn asset_loading(mut commands: Commands, assets: Res<AssetServer>) {
         bknight,
         bpawn,
     };
-    let db = DataBase{data:HashMap::new()};
+    let db = DataBase{data:HashMap::new(),piece_flag:false,square_flag:false,piece_id:"".to_string()};
     commands.insert_resource(db);
     commands.insert_resource(chess_board);
 
@@ -109,8 +115,8 @@ pub fn spawn_basic_chess_board(
     mut meshes: ResMut<Assets<Mesh>>,
     chess_board:Res<ChessBoard>){
 
-    let default_collider_color = materials.add(Color::rgba(0.3, 0.5, 0.3, 0.1).into());
-    let selected_collider_color = materials.add(Color::rgba(0.3, 0.9, 0.3, 0.3).into());
+    let default_collider_color = materials.add(Color::rgba(0.3, 0.5, 0.3, 0.).into());
+    let selected_collider_color = materials.add(Color::rgba(0.3, 0.9, 0.3, 0.).into());
 
     commands.spawn(
         SceneBundle{
@@ -513,6 +519,7 @@ fn spawn_camera(mut commands: Commands) {
 fn camera_controls(
     keyboard: Res<Input<KeyCode>>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
+    mut db:ResMut<DataBase>,
     time: Res<Time>,
     ) {
     let mut camera = camera_query.single_mut();
@@ -557,23 +564,77 @@ fn camera_controls(
         camera.rotate_axis(Vec3::X, -rotate_speed * time.delta_seconds())
     }
     if keyboard.pressed(KeyCode::F) {
-        camera.rotate_axis(Vec3::Y, rotate_speed * time.delta_seconds())
+        camera.rotate_axis(Vec3::Y, -rotate_speed * time.delta_seconds())
     }
     if keyboard.pressed(KeyCode::S) {
-        camera.rotate_axis(Vec3::Y, -rotate_speed * time.delta_seconds())
+        camera.rotate_axis(Vec3::Y, rotate_speed * time.delta_seconds())
+    }
+
+    if keyboard.pressed(KeyCode::A) && db.piece_flag{
+        let trans = db.data["piece"].translation;
+        let mut camera = camera_query.single_mut();
+        camera.translation.x = trans.x;
+        camera.translation.y = trans.y+8.;
+        camera.translation.z = trans.z;
     }
 }
 
-fn chess_movement_script(mut db:ResMut<DataBase>,mut selection:Query<(&Name,&Selection,&mut Transform)>){
-    for (name,selection,mut transform) in selection.iter_mut(){
-        if selection.selected(){
+fn chess_data_piece(
+    mut db:ResMut<DataBase>,
+    mut selection:Query<(&Name,&Selection,&mut Transform,Entity)>,
+    keyboard:Res<Input<KeyCode>>){
+
+    for (name,selection,mut transform,entity) in selection.iter_mut(){
+        if selection.selected() && name.to_string() != "chess_square".to_string(){
             db.data.insert("piece".to_string(),transform.clone());
-            if name.to_string() == "chess_square".to_string(){
-                db.data.insert("square".to_string(),transform.clone());
-            }
-            else{
-                db.data.insert("piece".to_string(),transform.clone());
-            }
-            println!("db:{:?}",db);
+            db.piece_id = format!("{:?}",entity);
+            db.piece_flag=true;
         }
     }
+}
+
+//support script
+fn chess_data_square(
+    mut db:ResMut<DataBase>,
+    mut selection:Query<(&Name,&Selection,&mut Transform)>,
+    ){
+    if db.piece_flag{
+        for (name,selection,mut transform) in selection.iter_mut(){
+            if selection.selected() && name.to_string() == "chess_square".to_string(){
+                db.data.insert("square".to_string(),transform.clone());
+                db.square_flag = true;
+            }
+        }
+
+    }
+
+}
+
+fn chess_movement_script(
+    mut db:ResMut<DataBase>,
+    mut selection:Query<(&Selection,&mut Transform,Entity)>,
+    ){
+    if db.square_flag && db.piece_flag{
+        for (selection,mut transform,entity) in selection.iter_mut(){
+            if format!("{:?}",entity) == db.piece_id{
+                db.piece_flag=false;
+                db.square_flag=false;
+                let trans = db.data[&"square".to_string()].translation;
+                transform.translation = trans;
+            }
+
+        }
+    }
+
+
+
+}
+
+
+
+
+
+
+
+
+
