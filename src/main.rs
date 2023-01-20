@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_mod_picking::*;
+use chess::dbmu::Database;
 use std::time::Duration;
 use std::thread::sleep;
 use std::thread;
@@ -11,7 +12,7 @@ use std::thread;
 pub const HEIGHT: f32 = 720.0;
 pub const WIDTH: f32 = 1280.0;
 
-fn main() {
+fn main(){
     App::new()
         // Window Setup
         .insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
@@ -38,6 +39,7 @@ fn main() {
         .add_system(chess_movement_script)
         .add_system(chess_data_piece)
         .add_system(chess_data_square)
+        .add_system(update_board_state)
         // .add_system(test_selection)
         .run();
 }
@@ -61,16 +63,68 @@ pub struct ChessBoard{
     bpawn: Handle<Scene>,
 }
 
+#[derive(Component)]
+struct Piece{
+    tag:String,
+    move_count:i32,
+
+}
+impl Piece{
+    fn new(tag:String)->Piece{
+        Piece { 
+            tag,
+            move_count:0
+                
+        }
+    }
+    //offset represents distance to move forward (def:6) -6 in some cases
+    fn possible_moves(&self,x:&f32,z:&f32,offset:f32)->Vec<(f32,f32)>{
+        let mut returns = Vec::new();
+        if self.tag =="king".to_string(){
+            returns.push((x+offset,*z));
+            returns.push((x-offset,*z));
+            returns.push((x+offset,z+offset));
+            returns.push((x-offset,z+offset));
+            returns.push((x+offset,z-offset));
+            returns.push((x-offset,z-offset));
+            returns.push((*x,z+offset));
+            returns.push((*x,z-offset));
+            //TODO:castling 
+        }
+        if self.tag =="pawn".to_string(){
+            returns.push((*x,z+offset));
+            if self.move_count==0{
+                returns.push((*x,z+2.*offset));
+            }
+        }
+
+        if self.tag == "rook".to_string(){
+
+        }
+
+
+        //illegal move filter add here
+        return returns
+    }
+
+
+
+}
+
 #[derive(Resource)]
 #[derive(Debug)]
-struct DataBase{
+struct MovementDataBase{
     data:HashMap<String,Transform>,
     piece_flag:bool,
     square_flag:bool,
     piece_id:String,
 }
 
-
+#[derive(Resource)]
+#[derive(Debug)]
+struct BoardDataBase{
+    database:Database
+}
 
 fn asset_loading(mut commands: Commands, assets: Res<AssetServer>) {
     //loading... if u want to reuse it add it to commands.add_resource
@@ -103,8 +157,10 @@ fn asset_loading(mut commands: Commands, assets: Res<AssetServer>) {
         bknight,
         bpawn,
     };
-    let db = DataBase{data:HashMap::new(),piece_flag:false,square_flag:false,piece_id:"".to_string()};
-    commands.insert_resource(db);
+    let mv_db = MovementDataBase{data:HashMap::new(),piece_flag:false,square_flag:false,piece_id:"".to_string()};
+    let bd_db = BoardDataBase{database:Database::new()};
+    commands.insert_resource(mv_db);
+    commands.insert_resource(bd_db);
     commands.insert_resource(chess_board);
 
 }
@@ -115,8 +171,8 @@ pub fn spawn_basic_chess_board(
     mut meshes: ResMut<Assets<Mesh>>,
     chess_board:Res<ChessBoard>){
 
-    let default_collider_color = materials.add(Color::rgba(0.3, 0.5, 0.3, 0.).into());
-    let selected_collider_color = materials.add(Color::rgba(0.3, 0.9, 0.3, 0.).into());
+    let default_collider_color = materials.add(Color::rgba(0.3, 0.5, 0.3, 0.1).into());
+    let selected_collider_color = materials.add(Color::rgba(0.3, 0.9, 0.3, 0.3).into());
 
     commands.spawn(
         SceneBundle{
@@ -134,6 +190,7 @@ pub fn spawn_basic_chess_board(
                 .with_scale(Vec3::new(3., 18., 3.))
         ))
         .insert(Name::new("BLACK KING"))
+        .insert(Piece::new("king".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -162,6 +219,7 @@ pub fn spawn_basic_chess_board(
                 .with_scale(Vec3::new(3., 15., 3.))
         ))
         .insert(Name::new("BLACK QUEEN"))
+        .insert(Piece::new("queen".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -384,26 +442,26 @@ pub fn spawn_basic_chess_board(
     }
 
     //tiles
-    for i in 0..8{
-        for j in 0..8{
-            commands
-                .spawn(SpatialBundle::from_transform(
-                        Transform::from_xyz(-21.+i as f32*6., 0. , -21.+j as f32*6.,)
-                        .with_scale(Vec3::new(6., 1., 6.))
-                ))
-                .insert(Name::new("chess_square"))
-                .insert(meshes.add(shape::Cube::default().into()))
-                .insert(Highlighting {
-                    initial: default_collider_color.clone(),
-                    hovered: Some(selected_collider_color.clone()),
-                    pressed: Some(selected_collider_color.clone()),
-                    selected: Some(selected_collider_color.clone()),
-                })
-            .insert(default_collider_color.clone())
-                .insert(PickableBundle::default());
+    // for i in 0..8{
+    //     for j in 0..8{
+    //         commands
+    //             .spawn(SpatialBundle::from_transform(
+    //                     Transform::from_xyz(-21.+i as f32*6., 0. , -21.+j as f32*6.,)
+    //                     .with_scale(Vec3::new(6., 0.05, 6.))
+    //             ))
+    //             .insert(Name::new("chess_square"))
+    //             .insert(meshes.add(shape::Cube::default().into()))
+    //             .insert(Highlighting {
+    //                 initial: default_collider_color.clone(),
+    //                 hovered: Some(selected_collider_color.clone()),
+    //                 pressed: Some(selected_collider_color.clone()),
+    //                 selected: Some(selected_collider_color.clone()),
+    //             })
+    //         .insert(default_collider_color.clone())
+    //             .insert(PickableBundle::default());
 
-        }
-    }
+    //     }
+    // }
     //white pieces
     commands.spawn(
         SceneBundle{
@@ -519,7 +577,7 @@ fn spawn_camera(mut commands: Commands) {
 fn camera_controls(
     keyboard: Res<Input<KeyCode>>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
-    mut db:ResMut<DataBase>,
+    mut db:ResMut<MovementDataBase>,
     time: Res<Time>,
     ) {
     let mut camera = camera_query.single_mut();
@@ -580,12 +638,13 @@ fn camera_controls(
 }
 
 fn chess_data_piece(
-    mut db:ResMut<DataBase>,
-    mut selection:Query<(&Name,&Selection,&mut Transform,Entity)>,
+    commands:Commands,
+    mut db:ResMut<MovementDataBase>,
+    mut selection:Query<(&Selection,&mut Transform,Entity),With<Piece>>,
     keyboard:Res<Input<KeyCode>>){
 
-    for (name,selection,mut transform,entity) in selection.iter_mut(){
-        if selection.selected() && name.to_string() != "chess_square".to_string(){
+    for (selection,mut transform,entity) in selection.iter_mut(){
+        if selection.selected(){
             db.data.insert("piece".to_string(),transform.clone());
             db.piece_id = format!("{:?}",entity);
             db.piece_flag=true;
@@ -595,7 +654,7 @@ fn chess_data_piece(
 
 //support script
 fn chess_data_square(
-    mut db:ResMut<DataBase>,
+    mut db:ResMut<MovementDataBase>,
     mut selection:Query<(&Name,&Selection,&mut Transform)>,
     ){
     if db.piece_flag{
@@ -605,13 +664,11 @@ fn chess_data_square(
                 db.square_flag = true;
             }
         }
-
     }
-
 }
 
 fn chess_movement_script(
-    mut db:ResMut<DataBase>,
+    mut db:ResMut<MovementDataBase>,
     mut selection:Query<(&Selection,&mut Transform,Entity)>,
     ){
     if db.square_flag && db.piece_flag{
@@ -622,19 +679,28 @@ fn chess_movement_script(
                 let trans = db.data[&"square".to_string()].translation;
                 transform.translation = trans;
             }
-
         }
     }
-
-
-
 }
 
+fn update_board_state(
+    mut db:ResMut<BoardDataBase>,
+    mut selection:Query<(&Transform,&Name),With<Piece>>
+    ){
+    for (transform,name) in &selection{
+        let _x = -transform.translation[0];
+        let _z = transform.translation[2];
+        let pos = chess_pos(_x,_z);
+        db.database.insert_data_unique(&format!("&p:{}&pos:{}",name,pos));
+    }
+    db.database.print_data();
+}
 
-
-
-
-
-
-
+fn chess_pos(x:f32,z:f32)->String{
+    //normalizing negative values
+    let file = (((x+21.)/6.).round()+97.) as u8 as char;
+    let rank = (((z+21.)/6.).round()+1.);
+    println!("file:{}rank:{}",file,rank);
+    return format!("{}{}",file,rank)
+}
 
