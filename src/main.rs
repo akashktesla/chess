@@ -1,7 +1,7 @@
 #![allow(warnings)]
 use std::f32::consts::PI;
 use std::collections::HashMap;
-use bevy::prelude::*;
+use bevy::{prelude::*, transform};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_mod_picking::*;
 use chess::dbmu::Database;
@@ -39,6 +39,7 @@ fn main(){
         .add_system(chess_movement_script)
         .add_system(chess_data_piece)
         .add_system(chess_data_square)
+        .add_system(purge_square_script)
         .add_system(update_board_state)
         // .add_system(test_selection)
         .run();
@@ -67,8 +68,11 @@ pub struct ChessBoard{
 struct Piece{
     tag:String,
     move_count:i32,
-
 }
+
+#[derive(Component)]
+struct Square;
+
 impl Piece{
     fn new(tag:String)->Piece{
         Piece { 
@@ -78,7 +82,13 @@ impl Piece{
         }
     }
     //offset represents distance to move forward (def:6) -6 in some cases
-    fn possible_moves(&self,x:&f32,z:&f32,offset:f32)->Vec<(f32,f32)>{
+    fn possible_moves(
+        &self,
+        x:&f32,
+        z:&f32,
+        offset:f32,
+        db:&ResMut<BoardDataBase>
+        )->Vec<(f32,f32)>{
         let mut returns = Vec::new();
         if self.tag =="king".to_string(){
             returns.push((x+offset,*z));
@@ -99,11 +109,92 @@ impl Piece{
         }
 
         if self.tag == "rook".to_string(){
+            let mut flag_left = true;
+            let mut flag_right = true;
+            let mut flag_front = true;
+            let mut flag_back = true;
 
+            //front
+            let mut count = 1.;
+            while flag_front{
+                let pos_x = *x;
+                let pos_z = z+count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_front = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while front
+
+            count =1.;
+            while flag_back{
+                let pos_x = *x;
+                let pos_z = z-count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_back = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while back
+
+            count = 1.;
+            while flag_right{
+                let pos_x = x+count*offset;
+                let pos_z = *z;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_x.abs() > 24. {
+                    flag_right = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while right
+
+            count = 1.;
+            while flag_left{
+                let pos_x = x-count*offset;
+                let pos_z = *z;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_x.abs() > 24. {
+                    flag_left = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while left
+        }
+        if self.tag == "knight".to_string(){
+            returns.push((x+offset*1.,z+offset*2.));
+            returns.push((x-offset*1.,z+offset*2.));
+            returns.push((x+offset*1.,z-offset*2.));
+            returns.push((x-offset*1.,z-offset*2.));
+            returns.push((x+offset*2.,z+offset*1.));
+            returns.push((x-offset*2.,z+offset*1.));
+            returns.push((x+offset*2.,z-offset*1.));
+            returns.push((x-offset*2.,z-offset*1.));
         }
 
 
         //illegal move filter add here
+        for i in returns{
+            let x = i.0;
+            let z = i.1;
+            let pos = chess_pos(x,z);
+            if db.data.contains_key(&pos) || x.abs()>21. || z.abs()>21.{
+                println!("-----------");
+                returns.retain(|&x| x != i);
+                
+
+            }
+        }
         return returns
     }
 
@@ -115,15 +206,34 @@ impl Piece{
 #[derive(Debug)]
 struct MovementDataBase{
     data:HashMap<String,Transform>,
-    piece_flag:bool,
-    square_flag:bool,
     piece_id:String,
 }
+#[derive(Resource)]
+#[derive(Debug)]
+struct Controller{
+    piece_flag:bool,
+    square_flag:bool,
+    spawn_square_flag:bool,
+    purge_square_flag:bool,
+}
+
+impl Controller{
+    fn new()->Controller{
+        Controller { 
+            piece_flag: false,
+            square_flag: false,
+            spawn_square_flag: true,
+            purge_square_flag:false,
+        }
+    }
+}
+
+
 
 #[derive(Resource)]
 #[derive(Debug)]
 struct BoardDataBase{
-    database:Database
+    data:HashMap<String,String>
 }
 
 fn asset_loading(mut commands: Commands, assets: Res<AssetServer>) {
@@ -157,9 +267,11 @@ fn asset_loading(mut commands: Commands, assets: Res<AssetServer>) {
         bknight,
         bpawn,
     };
-    let mv_db = MovementDataBase{data:HashMap::new(),piece_flag:false,square_flag:false,piece_id:"".to_string()};
-    let bd_db = BoardDataBase{database:Database::new()};
+    let mv_db = MovementDataBase{data:HashMap::new(),piece_id:"".to_string()};
+    let controller = Controller::new();
+    let bd_db = BoardDataBase{data:HashMap::new()};
     commands.insert_resource(mv_db);
+    commands.insert_resource(controller);
     commands.insert_resource(bd_db);
     commands.insert_resource(chess_board);
 
@@ -218,7 +330,7 @@ pub fn spawn_basic_chess_board(
                 Transform::from_xyz(3., 0., 21.,)
                 .with_scale(Vec3::new(3., 15., 3.))
         ))
-        .insert(Name::new("BLACK QUEEN"))
+        .insert(Name::new("bqueen"))
         .insert(Piece::new("queen".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
@@ -306,6 +418,7 @@ pub fn spawn_basic_chess_board(
                 .with_scale(Vec3::new(3., 10., 3.))
         ))
         .insert(Name::new("BLACK KNIGHT"))
+        .insert(Piece::new("knight".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -334,7 +447,8 @@ pub fn spawn_basic_chess_board(
                 Transform::from_xyz(15., 0., 21.,)
                 .with_scale(Vec3::new(3., 10., 3.))
         ))
-        .insert(Name::new("BLACK KNIGHT"))
+        .insert(Name::new("bknight"))
+        .insert(Piece::new("knight".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -362,7 +476,7 @@ pub fn spawn_basic_chess_board(
                 Transform::from_xyz(21., 0., 21.,)
                 .with_scale(Vec3::new(3., 10., 3.))
         ))
-        .insert(Name::new("BLACK ROOK"))
+        .insert(Name::new("brook"))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -371,6 +485,7 @@ pub fn spawn_basic_chess_board(
             selected: Some(selected_collider_color.clone()),
         })
         .insert(default_collider_color.clone())
+        .insert(Piece::new("rook".to_string()))
         .insert(PickableBundle::default())
         .with_children(|commands| {
             commands.spawn(
@@ -399,6 +514,7 @@ pub fn spawn_basic_chess_board(
             selected: Some(selected_collider_color.clone()),
         })
         .insert(default_collider_color.clone())
+        .insert(Piece::new("rook".to_string()))
         .insert(PickableBundle::default())
         .with_children(|commands| {
             commands.spawn(
@@ -418,7 +534,8 @@ pub fn spawn_basic_chess_board(
                 Transform::from_xyz(-21.+i as f32*6., 0., 15.,)
                 .with_scale(Vec3::new(3., 10., 3.))
         ))
-        .insert(Name::new("BLACK PAWN"))
+        .insert(Name::new("bpawn"))
+        .insert(Piece::new("pawn".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -578,6 +695,7 @@ fn camera_controls(
     keyboard: Res<Input<KeyCode>>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
     mut db:ResMut<MovementDataBase>,
+    ct:Res<Controller>,
     time: Res<Time>,
     ) {
     let mut camera = camera_query.single_mut();
@@ -628,7 +746,7 @@ fn camera_controls(
         camera.rotate_axis(Vec3::Y, rotate_speed * time.delta_seconds())
     }
 
-    if keyboard.pressed(KeyCode::A) && db.piece_flag{
+    if keyboard.pressed(KeyCode::A) && ct.piece_flag{
         let trans = db.data["piece"].translation;
         let mut camera = camera_query.single_mut();
         camera.translation.x = trans.x;
@@ -638,16 +756,46 @@ fn camera_controls(
 }
 
 fn chess_data_piece(
-    commands:Commands,
+    mut commands:Commands,
     mut db:ResMut<MovementDataBase>,
-    mut selection:Query<(&Selection,&mut Transform,Entity),With<Piece>>,
+    mut selection:Query<(&Selection,&mut Transform,Entity,&Piece)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut b_db:ResMut<BoardDataBase>,
+    mut ct:ResMut<Controller>,
     keyboard:Res<Input<KeyCode>>){
 
-    for (selection,mut transform,entity) in selection.iter_mut(){
-        if selection.selected(){
+    let default_collider_color = materials.add(Color::rgba(0.0, 0.3, 0.3, 1.).into());
+    let selected_collider_color = materials.add(Color::rgba(0.0, 0.9, 0.3, 1.).into());
+    for (selection,mut transform,entity,piece) in selection.iter_mut(){
+        if selection.selected() && ct.spawn_square_flag{
             db.data.insert("piece".to_string(),transform.clone());
             db.piece_id = format!("{:?}",entity);
-            db.piece_flag=true;
+            ct.piece_flag=true;
+
+                let x = transform.translation.x;
+                let z = transform.translation.z;
+                let offset = -6.;
+                let a = piece.possible_moves(&x,&z, offset, &b_db);
+                for i in a{
+                    commands
+                        .spawn(SpatialBundle::from_transform(
+                                Transform::from_xyz(i.0, 0. , i.1,)
+                                .with_scale(Vec3::new(6., 0.05, 6.))
+                        ))
+                        .insert(Name::new("chess_square"))
+                        .insert(Square)
+                        .insert(meshes.add(shape::Cube::default().into()))
+                        .insert(Highlighting {
+                            initial: default_collider_color.clone(),
+                            hovered: Some(selected_collider_color.clone()),
+                            pressed: Some(selected_collider_color.clone()),
+                            selected: Some(selected_collider_color.clone()),
+                        })
+                    .insert(default_collider_color.clone())
+                        .insert(PickableBundle::default());
+                }
+                ct.spawn_square_flag = false;
         }
     }
 }
@@ -656,12 +804,13 @@ fn chess_data_piece(
 fn chess_data_square(
     mut db:ResMut<MovementDataBase>,
     mut selection:Query<(&Name,&Selection,&mut Transform)>,
+    mut ct:ResMut<Controller>,
     ){
-    if db.piece_flag{
+    if ct.piece_flag{
         for (name,selection,mut transform) in selection.iter_mut(){
             if selection.selected() && name.to_string() == "chess_square".to_string(){
                 db.data.insert("square".to_string(),transform.clone());
-                db.square_flag = true;
+                ct.square_flag = true;
             }
         }
     }
@@ -669,38 +818,61 @@ fn chess_data_square(
 
 fn chess_movement_script(
     mut db:ResMut<MovementDataBase>,
-    mut selection:Query<(&Selection,&mut Transform,Entity)>,
+    mut ct:ResMut<Controller>,
+    mut selection:Query<(&Selection,&mut Transform,Entity,&mut Piece)>,
     ){
-    if db.square_flag && db.piece_flag{
-        for (selection,mut transform,entity) in selection.iter_mut(){
+    if ct.square_flag && ct.piece_flag{
+        for (selection,mut transform,entity,mut piece) in selection.iter_mut(){
             if format!("{:?}",entity) == db.piece_id{
-                db.piece_flag=false;
-                db.square_flag=false;
+                ct.piece_flag=false;
+                ct.square_flag=false;
                 let trans = db.data[&"square".to_string()].translation;
                 transform.translation = trans;
+                ct.purge_square_flag = true;
+                piece.move_count+=1;
             }
         }
     }
 }
 
+fn purge_square_script(
+    mut ct:ResMut<Controller>,
+    mut commands:Commands,
+    mut query:Query<(Entity),With<Square>>
+    ){
+    for e in  query.iter_mut(){
+        let e = commands.get_entity(e).unwrap();
+        e.despawn_recursive();
+    }
+    ct.purge_square_flag = false;
+    ct.spawn_square_flag = true;
+}
+
+
 fn update_board_state(
     mut db:ResMut<BoardDataBase>,
     mut selection:Query<(&Transform,&Name),With<Piece>>
     ){
+    let mut data = HashMap::new();
     for (transform,name) in &selection{
-        let _x = -transform.translation[0];
+        let _x = transform.translation[0];
         let _z = transform.translation[2];
         let pos = chess_pos(_x,_z);
-        db.database.insert_data_unique(&format!("&p:{}&pos:{}",name,pos));
+        data.insert(pos,name.to_string());
     }
-    db.database.print_data();
+    db.data = data;
 }
 
 fn chess_pos(x:f32,z:f32)->String{
     //normalizing negative values
+    let x = -x;
     let file = (((x+21.)/6.).round()+97.) as u8 as char;
     let rank = (((z+21.)/6.).round()+1.);
-    println!("file:{}rank:{}",file,rank);
     return format!("{}{}",file,rank)
 }
+
+
+
+
+
 
