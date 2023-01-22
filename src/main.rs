@@ -101,9 +101,134 @@ impl Piece{
             returns.push((*x,z-offset));
             //TODO:castling 
         }
+
+        if self.tag == "queen".to_string(){
+            let mut flag_left = true;
+            let mut flag_right = true;
+            let mut flag_front = true;
+            let mut flag_back = true;
+
+            //front
+            let mut count = 1.;
+            while flag_front{
+                let pos_x = *x;
+                let pos_z = z+count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_front = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while front
+
+            count =1.;
+            while flag_back{
+                let pos_x = *x;
+                let pos_z = z-count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_back = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while back
+
+            count = 1.;
+            while flag_right{
+                let pos_x = x+count*offset;
+                let pos_z = *z;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_x.abs() > 24. {
+                    flag_right = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while right
+
+            count = 1.;
+            while flag_left{
+                let pos_x = x-count*offset;
+                let pos_z = *z;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_x.abs() > 24. {
+                    flag_left = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while left
+
+            let mut flag_1 = true;
+            let mut flag_2 = true;
+            let mut flag_3 = true;
+            let mut flag_4 = true;
+            let mut count = 1.;
+            while flag_1{
+                let pos_x = x+count*offset;
+                let pos_z = z+count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_1 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 1
+            count = 1.;
+            while flag_2{
+                let pos_x = x-count*offset;
+                let pos_z = z+count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_2 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 2
+
+            count = 1.;
+            while flag_3{
+                let pos_x = x+count*offset;
+                let pos_z = z-count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_3 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 3
+
+            count = 1.;
+            while flag_4{
+                let pos_x = x-count*offset;
+                let pos_z = z-count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_4 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 4
+
+        }
+
         if self.tag =="pawn".to_string(){
             returns.push((*x,z+offset));
-            if self.move_count==0{
+            if self.move_count==0 && !db.data.contains_key(&chess_pos(*x,z+1.*offset)){
                 returns.push((*x,z+2.*offset));
             }
         }
@@ -171,6 +296,68 @@ impl Piece{
                 }
             }//while left
         }
+        if self.tag == "bishop".to_string(){
+            let mut flag_1 = true;
+            let mut flag_2 = true;
+            let mut flag_3 = true;
+            let mut flag_4 = true;
+            let mut count = 1.;
+            while flag_1{
+                let pos_x = x+count*offset;
+                let pos_z = z+count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_1 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 1
+            count = 1.;
+            while flag_2{
+                let pos_x = x-count*offset;
+                let pos_z = z+count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_2 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 2
+
+            count = 1.;
+            while flag_3{
+                let pos_x = x+count*offset;
+                let pos_z = z-count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_3 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 3
+
+            count = 1.;
+            while flag_4{
+                let pos_x = x-count*offset;
+                let pos_z = z-count*offset;
+                let pos = chess_pos(pos_x,pos_z);
+                if db.data.contains_key(&pos) || pos_z.abs() > 24. {
+                    flag_4 = false;
+                }
+                else{
+                    returns.push((pos_x,pos_z));
+                    count+=1.;
+                }
+            }//while 4
+
+
+        }
         if self.tag == "knight".to_string(){
             returns.push((x+offset*1.,z+offset*2.));
             returns.push((x-offset*1.,z+offset*2.));
@@ -184,18 +371,16 @@ impl Piece{
 
 
         //illegal move filter add here
+        let mut returns_filtered = Vec::new();
         for i in returns{
             let x = i.0;
             let z = i.1;
             let pos = chess_pos(x,z);
-            if db.data.contains_key(&pos) || x.abs()>21. || z.abs()>21.{
-                println!("-----------");
-                returns.retain(|&x| x != i);
-                
-
+            if !(db.data.contains_key(&pos) || x.abs()>21. || z.abs()>21.){
+                returns_filtered.push(i);
             }
         }
-        return returns
+        return returns_filtered
     }
 
 
@@ -360,7 +545,8 @@ pub fn spawn_basic_chess_board(
                 Transform::from_xyz(9., 0., 21.,)
                 .with_scale(Vec3::new(3., 14., 3.))
         ))
-        .insert(Name::new("BLACK BISHOP"))
+        .insert(Name::new("bbsishop"))
+        .insert(Piece::new("bishop".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -388,7 +574,8 @@ pub fn spawn_basic_chess_board(
                 Transform::from_xyz(-9., 0., 21.,)
                 .with_scale(Vec3::new(3., 14., 3.))
         ))
-        .insert(Name::new("BLACK BISHOP"))
+        .insert(Name::new("bbishop"))
+        .insert(Piece::new("bishop".to_string()))
         .insert(meshes.add(shape::Cube::default().into()))
         .insert(Highlighting {
             initial: default_collider_color.clone(),
@@ -870,9 +1057,5 @@ fn chess_pos(x:f32,z:f32)->String{
     let rank = (((z+21.)/6.).round()+1.);
     return format!("{}{}",file,rank)
 }
-
-
-
-
 
 
